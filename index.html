@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>Tareas de Julia</title>
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
+<link rel="manifest" href="manifest.json" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="Tareas J" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#6C63D6" />
+<style>
+  html, body { margin: 0; padding: 0; min-height: 100vh; }
+  body {
+    padding: 18px 10px;
+    background-color: #F2F0FF;
+    background-image:
+      radial-gradient(1.5px 1.5px at 20px 30px, rgba(108,99,214,0.35), transparent),
+      radial-gradient(1.5px 1.5px at 90px 80px, rgba(108,99,214,0.3), transparent),
+      radial-gradient(1px 1px at 160px 40px, rgba(108,99,214,0.35), transparent),
+      radial-gradient(1.5px 1.5px at 210px 120px, rgba(108,99,214,0.25), transparent),
+      radial-gradient(1px 1px at 280px 60px, rgba(108,99,214,0.3), transparent);
+    background-repeat: repeat;
+    background-size: 320px 180px;
+  }
+  #root { max-width: 820px; margin: 0 auto; }
+  #boot-message { font-family: monospace; color: #7A72B8; text-align: center; padding: 60px 16px; }
+</style>
+</head>
+<body>
+
+<div id="root"><div id="boot-message">Cargando…</div></div>
+
+<!-- React -->
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<!-- Babel: lets the browser understand the JSX below without a build step -->
+<script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<!-- Firebase (compat build, simplest to use with plain <script> tags) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+<script>
+  // =====================================================================
+  // ⬇️  RELLENA ESTO con la configuración de TU proyecto de Firebase
+  //     (un proyecto NUEVO y separado del de Irene).
+  //     La sacas de: Firebase Console → Configuración del proyecto →
+  //     "Tus apps" → app web → "Config".
+  //     Instrucciones completas en README.md
+  // =====================================================================
+  window.FIREBASE_CONFIG = {
+    apiKey: "AIzaSyAnSWrZXYnVKPE7MHJkk4soZCqPTYN2ne0",
+    authDomain: "tareas-julia.firebaseapp.com",
+    databaseURL: "https://tareas-julia-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "tareas-julia",
+    storageBucket: "tareas-julia.firebasestorage.app",
+    messagingSenderId: "225833821739",
+    appId: "1:225833821739:web:f6245a2da571462018ec6e"
+  };
+</script>
+
+<script type="text/babel" data-type="module">
+const { useState, useEffect, useRef } = React;
+
+// =====================================================================
+// Conexión con Firebase + sustituto de "window.storage"
+// =====================================================================
+let dbReady = false;
+let dbError = null;
+let db = null;
+try {
+  if (window.FIREBASE_CONFIG.apiKey.startsWith("PEGA_AQUI")) {
+    dbError = "CONFIG_MISSING";
+  } else {
+    firebase.initializeApp(window.FIREBASE_CONFIG);
+    db = firebase.database();
+    dbReady = true;
+  }
+} catch (e) {
+  dbError = e.message;
+}
+
+function sanitizeKey(key) {
+  return String(key).replace(/[.#$/\[\]]/g, "_");
+}
+
+window.storage = {
+  get: async (key) => {
+    if (!dbReady) throw new Error("DB not ready");
+    const snap = await db.ref("data/" + sanitizeKey(key)).once("value");
+    if (!snap.exists()) return null;
+    return { key, value: snap.val() };
+  },
+  set: async (key, value) => {
+    if (!dbReady) throw new Error("DB not ready");
+    await db.ref("data/" + sanitizeKey(key)).set(value);
+    return { key, value };
+  },
+};
+
+// =====================================================================
+// Iconos (sustituyen a lucide-react, para no depender de un empaquetador)
+// =====================================================================
+const ICON_PATHS = {
+  chevronLeft: <polyline points="15 18 9 12 15 6" />,
+  chevronRight: <polyline points="9 18 15 12 9 6" />,
+  check: <polyline points="20 6 9 17 4 12" />,
+  sparkles: <>
+    <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2 2M16 16l2 2M18 6l-2 2M8 16l-2 2" />
+  </>,
+  rotateCcw: <>
+    <path d="M3 12a9 9 0 1 0 3-6.7" />
+    <polyline points="3 4 3 10 9 10" />
+  </>,
+  trophy: <>
+    <path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0V4z" />
+    <path d="M5 4h2v3a3 3 0 0 1-3-3z" />
+    <path d="M19 4h-2v3a3 3 0 0 0 3-3z" />
+  </>,
+  star: <path d="M12 2.5l2.9 6.3 6.9.7-5.2 4.7 1.6 6.8L12 17.6l-6.2 3.4 1.6-6.8-5.2-4.7 6.9-.7L12 2.5z" />,
+  plus: <><path d="M12 5v14M5 12h14" /></>,
+  minus: <path d="M5 12h14" />,
+  gift: <>
+    <rect x="3" y="8" width="18" height="13" rx="1" />
+    <path d="M3 8h18v4H3zM12 8v13M12 8c-1.5-4-6-4-6-1.5S9 8 12 8zM12 8c1.5-4 6-4 6-1.5S15 8 12 8z" />
+  </>,
+  alertTriangle: <>
+    <path d="M10.3 3.6L1.8 18a1.7 1.7 0 0 0 1.5 2.5h17.4a1.7 1.7 0 0 0 1.5-2.5L13.7 3.6a1.7 1.7 0 0 0-3.4 0z" />
+    <line x1="12" y1="9" x2="12" y2="13" />
+    <line x1="12" y1="17" x2="12.01" y2="17" />
+  </>,
+  shieldCheck: <>
+    <path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6l7-3z" />
+    <polyline points="9 12 11 14 15 10" />
+  </>,
+};
+
+function Icon({ name, size = 16, strokeWidth = 2, color = "currentColor", fill = "none", style }) {
+  return (
+    <svg
+      width={size} height={size} viewBox="0 0 24 24"
+      fill={fill} stroke={color} strokeWidth={strokeWidth}
+      strokeLinecap="round" strokeLinejoin="round" style={style}
+    >
+      {ICON_PATHS[name]}
+    </svg>
+  );
+}
+
+const ChevronLeft = (p) => <Icon name="chevronLeft" {...p} />;
+const ChevronRight = (p) => <Icon name="chevronRight" {...p} />;
+const Check = (p) => <Icon name="check" {...p} />;
+const Sparkles = (p) => <Icon name="sparkles" {...p} />;
+const RotateCcw = (p) => <Icon name="rotateCcw" {...p} />;
+const Trophy = (p) => <Icon name="trophy" {...p} />;
+const Star = (p) => <Icon name="star" {...p} />;
+const Plus = (p) => <Icon name="plus" {...p} />;
+const Minus = (p) => <Icon name="minus" {...p} />;
+const Gift = (p) => <Icon name="gift" {...p} />;
+const AlertTriangle = (p) => <Icon name="alertTriangle" {...p} />;
+const ShieldCheck = (p) => <Icon name="shieldCheck" {...p} />;
+
+// =====================================================================
+// Configuración del sistema de tareas de Julia
+// =====================================================================
+
+const PLAYER_NAME = 'Julia';
+
+const DAY_LETTERS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+const DAY_FULL = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+const EXTRA_TASKS = [
+  { key: 'polvoCasa', label: 'Limpiar el polvo de la casa', points: 1 },
+  { key: 'polvoPlantas', label: 'Limpiar el polvo de las plantas', points: 1 },
+  { key: 'espejos', label: 'Limpiar los espejos', points: 1 },
+  { key: 'muebleSalon', label: 'Ordenar el mueble del salón', points: 1 },
+];
+
+const BASE_PAY = 3;
+const EXTRA_GOAL = 3;
+const EXTRA_BONUS = 2;
+const FAIL_LIMIT = 3;   // se pierde la paga base al 3er fallo (2 fallos tolerados) en cama/ropa
+const AVISOS_LIMIT = 5; // se pierde la paga base al 5º aviso (4 avisos tolerados, igual que Irene)
+
+function pad(n) { return n < 10 ? '0' + n : '' + n; }
+
+function getMonday(d) {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + diff);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function addDays(date, n) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+
+function getISOWeek(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return { week: weekNo, year: d.getUTCFullYear() };
+}
+
+function weekKeyFromMonday(monday) {
+  const { week, year } = getISOWeek(monday);
+  return `${year}-W${pad(week)}`;
+}
+
+// El cajón del baño se reparte semana sí, semana no con su hermana Irene.
+// La app de Irene usa las semanas PARES; Julia usa las semanas IMPARES,
+// para que nunca coincidan.
+function isCajonWeek(monday) {
+  const { week } = getISOWeek(monday);
+  return week % 2 !== 0;
+}
+
+function formatShort(date) {
+  return `${date.getDate()} ${MONTHS[date.getMonth()]}`;
+}
+
+function emptyDays7() {
+  return Array(7).fill(false);
+}
+
+function emptyWeekData() {
+  return {
+    cama: emptyDays7(),
+    ropa: emptyDays7(),
+    cuarto: false,
+    cajon: false,
+    avisos: 0,
+    extras: {
+      polvoCasa: emptyDays7(),
+      polvoPlantas: emptyDays7(),
+      espejos: emptyDays7(),
+      muebleSalon: emptyDays7(),
+      libre: 0,
+    },
+  };
+}
+
+function normalizeDays7(arr) {
+  if (!Array.isArray(arr)) return emptyDays7();
+  return Array.from({ length: 7 }, (_, i) => !!arr[i]);
+}
+
+function normalizeWeekData(raw) {
+  const base = emptyWeekData();
+  if (!raw || typeof raw !== 'object') return base;
+  const extras = raw.extras || {};
+  return {
+    cama: normalizeDays7(raw.cama),
+    ropa: normalizeDays7(raw.ropa),
+    cuarto: !!raw.cuarto,
+    cajon: !!raw.cajon,
+    avisos: typeof raw.avisos === 'number' ? raw.avisos : 0,
+    extras: {
+      polvoCasa: normalizeDays7(extras.polvoCasa),
+      polvoPlantas: normalizeDays7(extras.polvoPlantas),
+      espejos: normalizeDays7(extras.espejos),
+      muebleSalon: normalizeDays7(extras.muebleSalon),
+      libre: typeof extras.libre === 'number' ? extras.libre : 0,
+    },
+  };
+}
+
+function Cell({ done, onClick, ariaLabel, sublabel }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={done}
+      aria-label={ariaLabel}
+      className={`gt-cell ${done ? 'gt-cell--confirmed' : ''}`}
+    >
+      <span className="gt-cell__mark">
+        {done && <Check size={14} strokeWidth={3} />}
+      </span>
+      {!done && <span className="gt-cell__letter">{sublabel}</span>}
+    </button>
+  );
+}
+
+function Lives({ failCount, limit }) {
+  const alive = Math.max(0, limit - failCount);
+  return (
+    <div className="gt-lives">
+      {Array.from({ length: limit }).map((_, i) => (
+        <Star
+          key={i}
+          size={16}
+          strokeWidth={1.6}
+          fill={i < alive ? '#6C63D6' : 'none'}
+          color={i < alive ? '#6C63D6' : '#C3BCF5'}
+        />
+      ))}
+    </div>
+  );
+}
+
+function BancoDeMisiones() {
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [weekData, setWeekData] = useState(null);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const loadTokenRef = useRef(0);
+
+  const today = new Date();
+  const monday = addDays(getMonday(today), weekOffset * 7);
+  const days = Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+  const weekKey = weekKeyFromMonday(monday);
+  const isCurrentWeek = weekOffset === 0;
+  const isPastWeek = weekOffset < 0;
+  const todayIndex = (today.getDay() + 6) % 7;
+  const cajonActive = isCajonWeek(monday);
+
+  useEffect(() => {
+    const token = ++loadTokenRef.current;
+    setWeekData(null);
+    setConfirmReset(false);
+    (async () => {
+      try {
+        const res = await window.storage.get(`week:${weekKey}`, true);
+        if (loadTokenRef.current !== token) return;
+        setWeekData(res ? normalizeWeekData(JSON.parse(res.value)) : emptyWeekData());
+      } catch (e) {
+        if (loadTokenRef.current !== token) return;
+        setWeekData(emptyWeekData());
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekKey]);
+
+  useEffect(() => {
+    if (weekData === null) return;
+    (async () => {
+      try {
+        await window.storage.set(`week:${weekKey}`, JSON.stringify(weekData), true);
+      } catch (e) {
+        console.error('No se pudo guardar la semana', e);
+      }
+    })();
+  }, [weekData, weekKey]);
+
+  if (!weekData) {
+    return (
+      <div className="gt-app">
+        <style>{STYLES}</style>
+        <div className="gt-loading">Cargando la semana…</div>
+      </div>
+    );
+  }
+
+  const toggleMain = (key, i) => {
+    setWeekData((prev) => {
+      const arr = [...prev[key]];
+      arr[i] = !arr[i];
+      return { ...prev, [key]: arr };
+    });
+  };
+
+  const toggleCuarto = () => {
+    setWeekData((prev) => ({ ...prev, cuarto: !prev.cuarto }));
+  };
+
+  const toggleCajon = () => {
+    setWeekData((prev) => ({ ...prev, cajon: !prev.cajon }));
+  };
+
+  const toggleExtra = (key, i) => {
+    setWeekData((prev) => {
+      const arr = [...prev.extras[key]];
+      arr[i] = !arr[i];
+      return { ...prev, extras: { ...prev.extras, [key]: arr } };
+    });
+  };
+
+  const addAviso = (delta) => {
+    setWeekData((prev) => ({ ...prev, avisos: Math.max(0, prev.avisos + delta) }));
+  };
+
+  const addLibre = (delta) => {
+    setWeekData((prev) => ({ ...prev, extras: { ...prev.extras, libre: Math.max(0, prev.extras.libre + delta) } }));
+  };
+
+  const resetWeek = () => {
+    setWeekData(emptyWeekData());
+    setConfirmReset(false);
+  };
+
+  const isPastDay = (i) => {
+    if (isPastWeek) return true;
+    if (isCurrentWeek) return i < todayIndex;
+    return false;
+  };
+
+  const failCount = (task) => task.reduce((sum, v, i) => sum + (isPastDay(i) && !v ? 1 : 0), 0);
+
+  const camaFails = failCount(weekData.cama);
+  const ropaFails = failCount(weekData.ropa);
+  const avisosCount = weekData.avisos;
+  const camaFailed = camaFails >= FAIL_LIMIT;
+  const ropaFailed = ropaFails >= FAIL_LIMIT;
+  const avisosFailed = avisosCount >= AVISOS_LIMIT;
+  const cuartoFailed = isPastWeek && !weekData.cuarto;
+  const cuartoPending = !weekData.cuarto && !cuartoFailed;
+  const cajonFailed = cajonActive && isPastWeek && !weekData.cajon;
+  const cajonPending = cajonActive && !weekData.cajon && !cajonFailed;
+
+  const basePayOk = !camaFailed && !ropaFailed && !avisosFailed && !cuartoFailed && !cajonFailed;
+  const baseEarned = basePayOk ? BASE_PAY : 0;
+
+  const extraConfirmedCount = (key) => weekData.extras[key].filter(Boolean).length;
+  const extraPoints =
+    EXTRA_TASKS.reduce((s, t) => s + extraConfirmedCount(t.key) * t.points, 0) + weekData.extras.libre * 1;
+  const extraBonus = extraPoints >= EXTRA_GOAL ? EXTRA_BONUS : 0;
+  const total = baseEarned + extraBonus;
+  const pointsPct = Math.min(100, (extraPoints / EXTRA_GOAL) * 100);
+
+  const camaConfirmed = weekData.cama.filter(Boolean).length;
+  const ropaConfirmed = weekData.ropa.filter(Boolean).length;
+  const obligConfirmed = camaConfirmed + ropaConfirmed + (weekData.cuarto ? 1 : 0);
+  const xpPct = Math.round((obligConfirmed / 15) * 50) + Math.round(Math.min(1, extraPoints / EXTRA_GOAL) * 50);
+
+  return (
+    <div className="gt-app">
+      <style>{STYLES}</style>
+
+      <header className="gt-header">
+        <div className="gt-header__title">
+          <div className="gt-trophy"><Trophy size={20} strokeWidth={2} /></div>
+          <div>
+            <div className="gt-name">Tareas de {PLAYER_NAME}</div>
+          </div>
+        </div>
+
+        <div className="gt-week-nav">
+          <button className="gt-nav-btn" onClick={() => setWeekOffset((w) => w - 1)} aria-label="Semana anterior">
+            <ChevronLeft size={18} />
+          </button>
+          <div className="gt-week-label">
+            <span>{formatShort(days[0])} – {formatShort(days[6])}</span>
+            {isCurrentWeek && <span className="gt-badge">en curso</span>}
+          </div>
+          <button className="gt-nav-btn" onClick={() => setWeekOffset((w) => w + 1)} aria-label="Semana siguiente">
+            <ChevronRight size={18} />
+          </button>
+        </div>
+      </header>
+
+      <div className="gt-xp">
+        <div className="gt-xp__labels">
+          <span>Progreso de la semana</span>
+          <span className="gt-mono">{xpPct}%</span>
+        </div>
+        <div className="gt-xp__track">
+          <div className="gt-xp__fill" style={{ width: `${xpPct}%` }} />
+        </div>
+      </div>
+
+      <div className="gt-grid">
+        {/* TAREAS BASE */}
+        <section className="gt-panel">
+          <h2 className="gt-panel__title">Tareas base <span className="gt-panel__amount">{BASE_PAY.toFixed(2)} €</span></h2>
+          <p className="gt-panel__hint">2 fallos permitidos en cama/ropa, 4 avisos como máximo. El cuarto y el cajón del baño no tienen margen.</p>
+
+          <TaskRow
+            label="Hacer la cama"
+            sub="todos los días"
+            days={days}
+            task={weekData.cama}
+            onToggle={(i) => toggleMain('cama', i)}
+          />
+          <Lives failCount={camaFails} limit={FAIL_LIMIT} />
+
+          <TaskRow
+            label="Ropa sucia al cesto"
+            sub="todos los días"
+            days={days}
+            task={weekData.ropa}
+            onToggle={(i) => toggleMain('ropa', i)}
+          />
+          <Lives failCount={ropaFails} limit={FAIL_LIMIT} />
+
+          <div className="gt-weekly">
+            <div>
+              <div className="gt-weekly__label">Ordenar su cuarto</div>
+              <div className="gt-panel__sub">una vez a la semana</div>
+            </div>
+            <Cell
+              done={weekData.cuarto}
+              onClick={toggleCuarto}
+              ariaLabel="Cuarto ordenado esta semana"
+              sublabel=""
+            />
+          </div>
+          {cuartoFailed && (
+            <div className="gt-warning"><AlertTriangle size={13} /> tarea fallida</div>
+          )}
+          {cuartoPending && !cuartoFailed && (
+            <div className="gt-pending">pendiente esta semana</div>
+          )}
+
+          {cajonActive ? (
+            <>
+              <div className="gt-weekly">
+                <div>
+                  <div className="gt-weekly__label">Ordenar el cajón del baño</div>
+                  <div className="gt-panel__sub">le toca cada dos semanas</div>
+                </div>
+                <Cell
+                  done={weekData.cajon}
+                  onClick={toggleCajon}
+                  ariaLabel="Cajón del baño ordenado esta semana"
+                  sublabel=""
+                />
+              </div>
+              {cajonFailed && (
+                <div className="gt-warning"><AlertTriangle size={13} /> tarea fallida</div>
+              )}
+              {cajonPending && !cajonFailed && (
+                <div className="gt-pending">pendiente esta semana</div>
+              )}
+            </>
+          ) : (
+            <div className="gt-pending">🗄️ Cajón del baño: esta semana no le toca</div>
+          )}
+
+          <div className="gt-dish">
+            <div>
+              <div className="gt-weekly__label">Avisos del día a día</div>
+              <div className="gt-panel__sub">platos sin guardar en el lavavajillas, zapatos o ropa en el salón, o baño desordenado</div>
+            </div>
+            <div className="gt-dish__controls">
+              <button className="gt-round-btn" onClick={() => addAviso(-1)} aria-label="Quitar un aviso"><Minus size={14} /></button>
+              <span className="gt-mono gt-dish__count">{avisosCount} aviso{avisosCount === 1 ? '' : 's'}</span>
+              <button className="gt-round-btn gt-round-btn--warn" onClick={() => addAviso(1)} aria-label="Añadir un aviso"><Plus size={14} /></button>
+            </div>
+          </div>
+          <Lives failCount={avisosCount} limit={AVISOS_LIMIT} />
+
+          {!basePayOk && (
+            <div className="gt-status gt-status--failed"><AlertTriangle size={14} /> paga base perdida esta semana</div>
+          )}
+          {basePayOk && isCurrentWeek && (
+            <div className="gt-status gt-status--ok"><ShieldCheck size={14} /> paga base a salvo por ahora</div>
+          )}
+        </section>
+
+        {/* TAREAS EXTRA */}
+        <section className="gt-panel gt-panel--extra">
+          <h2 className="gt-panel__title">Tareas extra <span className="gt-panel__amount gt-panel__amount--gold">{EXTRA_BONUS.toFixed(2)} €</span></h2>
+          <p className="gt-panel__hint">Con {EXTRA_GOAL} puntos se desbloquea el bono, todo o nada.</p>
+
+          {EXTRA_TASKS.map((t) => (
+            <TaskRow
+              key={t.key}
+              label={t.label}
+              sub={`+${t.points} pto cada vez`}
+              days={days}
+              task={weekData.extras[t.key]}
+              onToggle={(i) => toggleExtra(t.key, i)}
+            />
+          ))}
+
+          <div className="gt-dish">
+            <div>
+              <div className="gt-weekly__label"><Gift size={14} style={{ marginRight: 4, verticalAlign: -2 }} />Tarea extra (sin definir)</div>
+              <div className="gt-panel__sub">+1 punto cada vez que surja algo puntual</div>
+            </div>
+            <div className="gt-dish__controls">
+              <button className="gt-round-btn" onClick={() => addLibre(-1)} aria-label="Quitar tarea sorpresa"><Minus size={14} /></button>
+              <span className="gt-mono gt-dish__count">{weekData.extras.libre}</span>
+              <button className="gt-round-btn gt-round-btn--gold" onClick={() => addLibre(1)} aria-label="Añadir tarea sorpresa"><Plus size={14} /></button>
+            </div>
+          </div>
+
+          <div className="gt-progress">
+            <div className="gt-progress__labels">
+              <span>Puntos esta semana</span>
+              <span className="gt-mono">{extraPoints} / {EXTRA_GOAL}</span>
+            </div>
+            <div className="gt-progress__track">
+              <div className="gt-progress__fill" style={{ width: `${pointsPct}%` }} />
+            </div>
+            {extraBonus > 0 && (
+              <div className="gt-unlocked"><Sparkles size={14} /> ¡bono desbloqueado!</div>
+            )}
+          </div>
+        </section>
+      </div>
+
+      <div className="gt-receipt">
+        <div className="gt-receipt__title">Recibo de la semana</div>
+        <div className="gt-receipt__row">
+          <span>Paga base</span>
+          <span className="gt-mono">{baseEarned.toFixed(2)} €</span>
+        </div>
+        <div className="gt-receipt__row">
+          <span>Bono extra ({extraPoints}/{EXTRA_GOAL} pts)</span>
+          <span className="gt-mono">{extraBonus.toFixed(2)} €</span>
+        </div>
+        <div className="gt-receipt__divider" />
+        <div className="gt-receipt__row gt-receipt__row--total">
+          <span>Total</span>
+          <span className="gt-mono">{total.toFixed(2)} €</span>
+        </div>
+      </div>
+
+      <div className="gt-footer">
+        {!confirmReset ? (
+          <button className="gt-reset-btn" onClick={() => setConfirmReset(true)}>
+            <RotateCcw size={13} /> Reiniciar esta semana
+          </button>
+        ) : (
+          <div className="gt-confirm">
+            <span>¿Borrar todo lo marcado esta semana?</span>
+            <button className="gt-confirm__yes" onClick={resetWeek}>Sí, borrar</button>
+            <button className="gt-confirm__no" onClick={() => setConfirmReset(false)}>Cancelar</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TaskRow({ label, sub, days, task, onToggle }) {
+  return (
+    <div className="gt-task-row">
+      <div className="gt-task-row__label">
+        <div>{label}</div>
+        {sub && <div className="gt-panel__sub">{sub}</div>}
+      </div>
+      <div className="gt-day-grid">
+        {days.map((d, i) => (
+          <Cell
+            key={i}
+            done={task[i]}
+            onClick={() => onToggle(i)}
+            ariaLabel={`${label} — ${DAY_FULL[i]} ${d.getDate()}`}
+            sublabel={DAY_LETTERS[i]}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const STYLES = `
+.gt-app {
+  --bg: #F2F0FF;
+  --panel: #EAE6FF;
+  --panel-extra: #DED7FF;
+  --border: #C9C0FA;
+  --purple: #6C63D6;
+  --pink: #4A6FE0;
+  --cyan: #3FB6C4;
+  --gold: #FFB238;
+  --red: #E5566B;
+  --text: #2B2560;
+  --text-dim: #8680B8;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  border-radius: 20px;
+  padding: 18px;
+  max-width: 780px;
+  margin: 0 auto;
+  box-shadow: 0 14px 34px -18px rgba(60,52,137,0.28);
+}
+.gt-app * { box-sizing: border-box; }
+.gt-loading { font-family: 'JetBrains Mono', monospace; padding: 40px; text-align: center; color: var(--text-dim); }
+
+.gt-header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding: 4px 4px 14px 4px; }
+.gt-header__title { display: flex; align-items: center; gap: 10px; }
+.gt-trophy { width: 38px; height: 38px; border-radius: 10px; background: var(--panel-extra); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; color: var(--gold); flex-shrink: 0; }
+.gt-eyebrow { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-dim); }
+.gt-name {
+  color: var(--text); font-family: 'Baloo 2', 'Inter', sans-serif; font-size: 20px; font-weight: 700;
+}
+
+.gt-week-nav { display: flex; align-items: center; gap: 8px; }
+.gt-nav-btn { background: var(--panel); border: 1px solid var(--border); color: var(--text); width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+.gt-nav-btn:hover { background: var(--panel-extra); border-color: var(--purple); }
+.gt-week-label { font-family: 'JetBrains Mono', monospace; font-size: 13px; text-align: center; min-width: 120px; }
+.gt-badge { display: block; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--cyan); margin-top: 2px; }
+
+.gt-xp { padding: 2px 4px 14px 4px; }
+.gt-xp__labels { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text-dim); margin-bottom: 6px; }
+.gt-xp__track { height: 10px; border-radius: 6px; background: var(--panel); overflow: hidden; border: 1px solid var(--border); }
+.gt-xp__fill { height: 100%; background: linear-gradient(90deg, var(--purple), var(--pink)); transition: width 0.3s ease; }
+
+.gt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 640px) { .gt-grid { grid-template-columns: 1fr; } }
+
+.gt-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+.gt-panel--extra { background: var(--panel-extra); }
+.gt-panel__title { font-family: 'Baloo 2', 'Inter', sans-serif; font-size: 17px; font-weight: 700; margin: 0 0 4px 0; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.gt-panel__amount { font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--cyan); }
+.gt-panel__amount--gold { color: var(--gold); }
+.gt-panel__hint { font-size: 12px; color: var(--text-dim); margin: 0 0 14px 0; line-height: 1.4; }
+.gt-panel__sub { font-size: 10.5px; color: var(--text-dim); margin-top: 2px; }
+
+.gt-task-row { margin-bottom: 6px; }
+.gt-task-row__label { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+
+.gt-day-grid { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+
+.gt-cell {
+  flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%;
+  border: 1.5px solid var(--border); background: transparent;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  cursor: pointer; color: var(--text-dim);
+  transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+  font-family: 'JetBrains Mono', monospace; font-size: 9px; font-weight: 600; padding: 0;
+}
+.gt-cell__mark { line-height: 0; height: 12px; display: flex; align-items: center; }
+.gt-cell__letter { line-height: 1; margin-top: 1px; }
+.gt-cell:hover { border-color: var(--pink); color: var(--pink); }
+.gt-cell--confirmed { background: var(--cyan); border-color: var(--cyan); color: #04323A; transform: scale(1.05); }
+
+.gt-lives { display: flex; gap: 4px; margin-bottom: 6px; padding-left: 2px; }
+
+.gt-weekly { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: rgba(108,99,214,0.06); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 6px; }
+.gt-weekly__label { font-size: 13px; font-weight: 600; }
+
+.gt-warning { display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--red); margin-bottom: 14px; font-weight: 600; }
+.gt-pending { font-size: 11px; color: var(--text-dim); margin-bottom: 14px; }
+
+.gt-dish { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: rgba(108,99,214,0.06); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 6px; margin-top: 10px; }
+.gt-dish__controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.gt-dish__count { font-size: 12px; min-width: 52px; text-align: center; }
+.gt-round-btn { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--border); background: var(--panel); color: var(--text); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.gt-round-btn:hover { border-color: var(--purple); }
+.gt-round-btn--warn:hover { border-color: var(--red); color: var(--red); }
+.gt-round-btn--gold:hover { border-color: var(--gold); color: var(--gold); }
+
+.gt-status { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.gt-status--failed { color: var(--red); }
+.gt-status--ok { color: var(--cyan); }
+
+.gt-progress { margin-top: 10px; }
+.gt-progress__labels { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text-dim); margin-bottom: 6px; }
+.gt-progress__track { height: 8px; border-radius: 6px; background: rgba(43,37,96,0.08); overflow: hidden; }
+.gt-progress__fill { height: 100%; background: var(--gold); transition: width 0.25s ease; }
+.gt-unlocked { display: flex; align-items: center; gap: 5px; margin-top: 8px; font-size: 12px; font-weight: 700; color: var(--gold); }
+
+.gt-mono { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
+
+.gt-receipt { background: var(--panel); border: 1px dashed var(--border); border-radius: 10px; margin: 14px 4px 4px 4px; padding: 16px 18px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; }
+.gt-receipt__title { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 10px; }
+.gt-receipt__row { display: flex; justify-content: space-between; padding: 3px 0; }
+.gt-receipt__divider { border-top: 1px dashed var(--border); margin: 6px 0; }
+.gt-receipt__row--total { font-size: 15px; font-weight: 700; color: var(--gold); }
+
+.gt-footer { display: flex; justify-content: center; padding: 12px 4px 2px 4px; }
+.gt-reset-btn { display: flex; align-items: center; gap: 6px; background: transparent; border: none; color: var(--text-dim); font-size: 11.5px; cursor: pointer; padding: 4px; }
+.gt-reset-btn:hover { color: var(--text); }
+.gt-confirm { display: flex; align-items: center; gap: 10px; font-size: 12px; flex-wrap: wrap; justify-content: center; }
+.gt-confirm__yes { background: var(--red); color: #fff; border: none; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 11.5px; }
+.gt-confirm__no { background: transparent; border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 11.5px; }
+
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+`;
+
+// =====================================================================
+// Arranque
+// =====================================================================
+function App() {
+  if (dbError === "CONFIG_MISSING") {
+    return (
+      <div style={{ fontFamily: "monospace", color: "#F1EFFF", background: "#241E4D", border: "1px solid #6C63D6", borderRadius: 14, padding: 24, maxWidth: 640, margin: "40px auto", lineHeight: 1.6 }}>
+        ⚠️ Falta configurar Firebase.<br/><br/>
+        Abre <b>index.html</b>, busca <b>FIREBASE_CONFIG</b> al principio del archivo
+        y pega ahí los datos de tu proyecto de Firebase (lo explica el README.md).
+      </div>
+    );
+  }
+  if (dbError) {
+    return (
+      <div style={{ fontFamily: "monospace", color: "#F1EFFF", background: "#241E4D", border: "1px solid #E5566B", borderRadius: 14, padding: 24, maxWidth: 640, margin: "40px auto", lineHeight: 1.6 }}>
+        ⚠️ No se pudo conectar con Firebase: {dbError}
+      </div>
+    );
+  }
+  return <BancoDeMisiones />;
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
