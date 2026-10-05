@@ -42,24 +42,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
-<script>
-  // =====================================================================
-  // ⬇️  RELLENA ESTO con la configuración de TU proyecto de Firebase
-  //     (un proyecto NUEVO y separado del de Irene).
-  //     La sacas de: Firebase Console → Configuración del proyecto →
-  //     "Tus apps" → app web → "Config".
-  //     Instrucciones completas en README.md
-  // =====================================================================
-  window.FIREBASE_CONFIG = {
-    apiKey: "AIzaSyAnSWrZXYnVKPE7MHJkk4soZCqPTYN2ne0",
-  authDomain: "tareas-julia.firebaseapp.com",
-  databaseURL: "https://tareas-julia-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "tareas-julia",
-  storageBucket: "tareas-julia.firebasestorage.app",
-  messagingSenderId: "225833821739",
-  appId: "1:225833821739:web:f6245a2da571462018ec6e"
-  };
-</script>
+<!-- La configuración de Firebase vive en su propio archivo (firebase-config.js)
+     para que al actualizar index.html no se pierda. -->
+<script src="firebase-config.js"></script>
 
 <script type="text/babel" data-type="module">
 const { useState, useEffect, useRef } = React;
@@ -71,7 +56,7 @@ let dbReady = false;
 let dbError = null;
 let db = null;
 try {
-  if (window.FIREBASE_CONFIG.apiKey.startsWith("PEGA_AQUI")) {
+  if (!window.FIREBASE_CONFIG || window.FIREBASE_CONFIG.apiKey.startsWith("PEGA_AQUI")) {
     dbError = "CONFIG_MISSING";
   } else {
     firebase.initializeApp(window.FIREBASE_CONFIG);
@@ -120,6 +105,7 @@ const ICON_PATHS = {
     <path d="M19 4h-2v3a3 3 0 0 0 3-3z" />
   </>,
   star: <path d="M12 2.5l2.9 6.3 6.9.7-5.2 4.7 1.6 6.8L12 17.6l-6.2 3.4 1.6-6.8-5.2-4.7 6.9-.7L12 2.5z" />,
+  x: <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>,
   plus: <><path d="M12 5v14M5 12h14" /></>,
   minus: <path d="M5 12h14" />,
   gift: <>
@@ -158,6 +144,7 @@ const Trophy = (p) => <Icon name="trophy" {...p} />;
 const Star = (p) => <Icon name="star" {...p} />;
 const Plus = (p) => <Icon name="plus" {...p} />;
 const Minus = (p) => <Icon name="minus" {...p} />;
+const X = (p) => <Icon name="x" {...p} />;
 const Gift = (p) => <Icon name="gift" {...p} />;
 const AlertTriangle = (p) => <Icon name="alertTriangle" {...p} />;
 const ShieldCheck = (p) => <Icon name="shieldCheck" {...p} />;
@@ -168,8 +155,13 @@ const ShieldCheck = (p) => <Icon name="shieldCheck" {...p} />;
 
 const PLAYER_NAME = 'Julia';
 
-const DAY_LETTERS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
-const DAY_FULL = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+// La semana empieza en SÁBADO y termina en viernes (igual que la app de Irene).
+// START_DAY usa la numeración de Date.getDay(): 0 = domingo ... 6 = sábado.
+const START_DAY = 6;
+const WEEKDAY_LETTERS = ['D', 'L', 'M', 'X', 'J', 'V', 'S'];
+const WEEKDAY_FULL = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+const DAY_LETTERS = Array.from({ length: 7 }, (_, i) => WEEKDAY_LETTERS[(START_DAY + i) % 7]);
+const DAY_FULL = Array.from({ length: 7 }, (_, i) => WEEKDAY_FULL[(START_DAY + i) % 7]);
 const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
 const EXTRA_TASKS = [
@@ -187,10 +179,10 @@ const AVISOS_LIMIT = 5; // se pierde la paga base al 5º aviso (4 avisos tolerad
 
 function pad(n) { return n < 10 ? '0' + n : '' + n; }
 
-function getMonday(d) {
+// Devuelve el primer día (sábado) de la semana que contiene la fecha dada.
+function getWeekStart(d) {
   const date = new Date(d);
-  const day = date.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
+  const diff = -((date.getDay() - START_DAY + 7) % 7);
   date.setDate(date.getDate() + diff);
   date.setHours(0, 0, 0, 0);
   return date;
@@ -211,16 +203,19 @@ function getISOWeek(date) {
   return { week: weekNo, year: d.getUTCFullYear() };
 }
 
-function weekKeyFromMonday(monday) {
-  const { week, year } = getISOWeek(monday);
-  return `${year}-W${pad(week)}`;
+// La clave de guardado usa la fecha del primer día de la semana (p. ej. "2026-10-03").
+// No se reutilizan las claves antiguas "2026-W41": eran semanas de lunes a domingo
+// y mezclarían los días.
+function weekKeyFromStart(weekStart) {
+  return `${weekStart.getFullYear()}-${pad(weekStart.getMonth() + 1)}-${pad(weekStart.getDate())}`;
 }
 
 // El cajón del baño se reparte semana sí, semana no con su hermana Irene.
-// La app de Irene usa las semanas PARES; Julia usa las semanas IMPARES,
+// Se mira la semana ISO del día en que empieza la semana (el sábado), igual que
+// en la app de Irene: ella usa las semanas PARES; Julia usa las IMPARES,
 // para que nunca coincidan.
-function isCajonWeek(monday) {
-  const { week } = getISOWeek(monday);
+function isCajonWeek(weekStart) {
+  const { week } = getISOWeek(weekStart);
   return week % 2 !== 0;
 }
 
@@ -234,8 +229,8 @@ function emptyDays7() {
 
 function emptyWeekData() {
   return {
-    cama: emptyDays7(),
-    ropa: emptyDays7(),
+    camaFail: emptyDays7(),
+    ropaFail: emptyDays7(),
     cuarto: false,
     cajon: false,
     avisos: 0,
@@ -254,13 +249,19 @@ function normalizeDays7(arr) {
   return Array.from({ length: 7 }, (_, i) => !!arr[i]);
 }
 
+// Cama y ropa se dan por cumplidas cada día. Solo se guardan los FALLOS:
+// los días que se han desmarcado.
+function normalizeFails(rawFail) {
+  return Array.isArray(rawFail) ? normalizeDays7(rawFail) : emptyDays7();
+}
+
 function normalizeWeekData(raw) {
   const base = emptyWeekData();
   if (!raw || typeof raw !== 'object') return base;
   const extras = raw.extras || {};
   return {
-    cama: normalizeDays7(raw.cama),
-    ropa: normalizeDays7(raw.ropa),
+    camaFail: normalizeFails(raw.camaFail),
+    ropaFail: normalizeFails(raw.ropaFail),
     cuarto: !!raw.cuarto,
     cajon: !!raw.cajon,
     avisos: typeof raw.avisos === 'number' ? raw.avisos : 0,
@@ -315,13 +316,16 @@ function BancoDeMisiones() {
   const loadTokenRef = useRef(0);
 
   const today = new Date();
-  const monday = addDays(getMonday(today), weekOffset * 7);
-  const days = Array.from({ length: 7 }, (_, i) => addDays(monday, i));
-  const weekKey = weekKeyFromMonday(monday);
+  const weekStart = addDays(getWeekStart(today), weekOffset * 7);
+  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const weekKey = weekKeyFromStart(weekStart);
   const isCurrentWeek = weekOffset === 0;
   const isPastWeek = weekOffset < 0;
-  const todayIndex = (today.getDay() + 6) % 7;
-  const cajonActive = isCajonWeek(monday);
+  // Posición de hoy dentro de la semana (0 = sábado ... 6 = viernes).
+  const todayIndex = (today.getDay() - START_DAY + 7) % 7;
+  const cajonActive = isCajonWeek(weekStart);
+  // Días que ya han "llegado" (incluido hoy).
+  const arrivedCount = isPastWeek ? 7 : isCurrentWeek ? todayIndex + 1 : 0;
 
   const loadedWeekKeyRef = useRef(null);
 
@@ -367,7 +371,9 @@ function BancoDeMisiones() {
     );
   }
 
-  const toggleMain = (key, i) => {
+  // Cama y ropa: se quita o se vuelve a poner un fallo, solo en días que ya han llegado.
+  const toggleFail = (key, i) => {
+    if (i >= arrivedCount) return;
     setWeekData((prev) => {
       const arr = [...prev[key]];
       arr[i] = !arr[i];
@@ -404,16 +410,10 @@ function BancoDeMisiones() {
     setConfirmReset(false);
   };
 
-  const isPastDay = (i) => {
-    if (isPastWeek) return true;
-    if (isCurrentWeek) return i < todayIndex;
-    return false;
-  };
+  const failCount = (fails) => fails.reduce((sum, v, i) => sum + (i < arrivedCount && v ? 1 : 0), 0);
 
-  const failCount = (task) => task.reduce((sum, v, i) => sum + (isPastDay(i) && !v ? 1 : 0), 0);
-
-  const camaFails = failCount(weekData.cama);
-  const ropaFails = failCount(weekData.ropa);
+  const camaFails = failCount(weekData.camaFail);
+  const ropaFails = failCount(weekData.ropaFail);
   const avisosCount = weekData.avisos;
   const camaFailed = camaFails >= FAIL_LIMIT;
   const ropaFailed = ropaFails >= FAIL_LIMIT;
@@ -433,8 +433,8 @@ function BancoDeMisiones() {
   const total = baseEarned + extraBonus;
   const pointsPct = Math.min(100, (extraPoints / EXTRA_GOAL) * 100);
 
-  const camaConfirmed = weekData.cama.filter(Boolean).length;
-  const ropaConfirmed = weekData.ropa.filter(Boolean).length;
+  const camaConfirmed = Math.max(0, arrivedCount - camaFails);
+  const ropaConfirmed = Math.max(0, arrivedCount - ropaFails);
   const obligConfirmed = camaConfirmed + ropaConfirmed + (weekData.cuarto ? 1 : 0);
   const xpPct = Math.round((obligConfirmed / 15) * 50) + Math.round(Math.min(1, extraPoints / EXTRA_GOAL) * 50);
 
@@ -478,23 +478,25 @@ function BancoDeMisiones() {
         {/* TAREAS BASE */}
         <section className="gt-panel">
           <h2 className="gt-panel__title">Tareas base <span className="gt-panel__amount">{BASE_PAY.toFixed(2)} €</span></h2>
-          <p className="gt-panel__hint">2 fallos permitidos en cama/ropa, 4 avisos como máximo. El cuarto y el cajón del baño no tienen margen.</p>
+          <p className="gt-panel__hint">Cama y ropa cuentan como hechas cada día; si no se cumple, toca el día para quitarlo. 2 fallos permitidos en cama/ropa, 4 avisos como máximo. El cuarto y el cajón del baño no tienen margen.</p>
 
-          <TaskRow
+          <AutoTaskRow
             label="Hacer la cama"
             sub="todos los días"
             days={days}
-            task={weekData.cama}
-            onToggle={(i) => toggleMain('cama', i)}
+            fails={weekData.camaFail}
+            arrivedCount={arrivedCount}
+            onToggle={(i) => toggleFail('camaFail', i)}
           />
           <Lives failCount={camaFails} limit={FAIL_LIMIT} />
 
-          <TaskRow
+          <AutoTaskRow
             label="Ropa sucia al cesto"
             sub="todos los días"
             days={days}
-            task={weekData.ropa}
-            onToggle={(i) => toggleMain('ropa', i)}
+            fails={weekData.ropaFail}
+            arrivedCount={arrivedCount}
+            onToggle={(i) => toggleFail('ropaFail', i)}
           />
           <Lives failCount={ropaFails} limit={FAIL_LIMIT} />
 
@@ -640,6 +642,54 @@ function BancoDeMisiones() {
   );
 }
 
+// Casilla de cama/ropa: ✓ automático desde que llega el día, ✗ si se quita.
+function AutoCell({ state, onClick, disabled, ariaLabel, sublabel }) {
+  const cls = state === 'done' ? 'confirmed' : state === 'failed' ? 'failed' : 'empty';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      className={`gt-cell gt-cell--${cls}`}
+    >
+      <span className="gt-cell__mark">
+        {state === 'done' && <Check size={14} strokeWidth={3} />}
+        {state === 'failed' && <X size={14} strokeWidth={3} />}
+      </span>
+      {state === 'future' && <span className="gt-cell__letter">{sublabel}</span>}
+    </button>
+  );
+}
+
+function AutoTaskRow({ label, sub, days, fails, arrivedCount, onToggle }) {
+  return (
+    <div className="gt-task-row">
+      <div className="gt-task-row__label">
+        <div>{label}</div>
+        {sub && <div className="gt-panel__sub">{sub}</div>}
+      </div>
+      <div className="gt-day-grid">
+        {days.map((d, i) => {
+          const arrived = i < arrivedCount;
+          const state = !arrived ? 'future' : fails[i] ? 'failed' : 'done';
+          const estado = state === 'failed' ? 'no cumplida' : state === 'done' ? 'cumplida' : 'pendiente';
+          return (
+            <AutoCell
+              key={i}
+              state={state}
+              disabled={!arrived}
+              onClick={() => onToggle(i)}
+              ariaLabel={`${label} — ${DAY_FULL[i]} ${d.getDate()}: ${estado}`}
+              sublabel={DAY_LETTERS[i]}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function TaskRow({ label, sub, days, task, onToggle }) {
   return (
     <div className="gt-task-row">
@@ -732,7 +782,9 @@ const STYLES = `
 }
 .gt-cell__mark { line-height: 0; height: 12px; display: flex; align-items: center; }
 .gt-cell__letter { line-height: 1; margin-top: 1px; }
-.gt-cell:hover { border-color: var(--pink); color: var(--pink); }
+.gt-cell:not(:disabled):hover { border-color: var(--pink); color: var(--pink); }
+.gt-cell:disabled { cursor: default; }
+.gt-cell--failed { background: var(--red); border-color: var(--red); color: #fff; transform: scale(1.05); }
 .gt-cell--confirmed { background: var(--cyan); border-color: var(--cyan); color: #04323A; transform: scale(1.05); }
 
 .gt-lives { display: flex; gap: 4px; margin-bottom: 6px; padding-left: 2px; }
@@ -787,8 +839,8 @@ function App() {
     return (
       <div style={{ fontFamily: "monospace", color: "#F1EFFF", background: "#241E4D", border: "1px solid #6C63D6", borderRadius: 14, padding: 24, maxWidth: 640, margin: "40px auto", lineHeight: 1.6 }}>
         ⚠️ Falta configurar Firebase.<br/><br/>
-        Abre <b>index.html</b>, busca <b>FIREBASE_CONFIG</b> al principio del archivo
-        y pega ahí los datos de tu proyecto de Firebase (lo explica el README.md).
+        Falta el archivo <b>firebase-config.js</b> junto a index.html, o sigue con los
+        <b>PEGA_AQUI</b> sin rellenar. Pega ahí los datos de tu proyecto de Firebase (lo explica el README.md).
       </div>
     );
   }
