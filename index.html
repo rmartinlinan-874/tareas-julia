@@ -42,9 +42,21 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
-<!-- La configuración de Firebase vive en su propio archivo (firebase-config.js)
-     para que al actualizar index.html no se pierda. -->
-<script src="firebase-config.js"></script>
+<script>
+  // =====================================================================
+  // Configuración de Firebase del proyecto "tareas-julia"
+  // (proyecto propio, separado del de Irene). Ya viene rellena.
+  // =====================================================================
+  window.FIREBASE_CONFIG = {
+    apiKey: "AIzaSyAnSWrZXYnVKPE7MHJkk4soZCqPTYN2ne0",
+    authDomain: "tareas-julia.firebaseapp.com",
+    databaseURL: "https://tareas-julia-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "tareas-julia",
+    storageBucket: "tareas-julia.firebasestorage.app",
+    messagingSenderId: "225833821739",
+    appId: "1:225833821739:web:f6245a2da571462018ec6e"
+  };
+</script>
 
 <script type="text/babel" data-type="module">
 const { useState, useEffect, useRef } = React;
@@ -839,8 +851,8 @@ function App() {
     return (
       <div style={{ fontFamily: "monospace", color: "#F1EFFF", background: "#241E4D", border: "1px solid #6C63D6", borderRadius: 14, padding: 24, maxWidth: 640, margin: "40px auto", lineHeight: 1.6 }}>
         ⚠️ Falta configurar Firebase.<br/><br/>
-        Falta el archivo <b>firebase-config.js</b> junto a index.html, o sigue con los
-        <b>PEGA_AQUI</b> sin rellenar. Pega ahí los datos de tu proyecto de Firebase (lo explica el README.md).
+        Abre <b>index.html</b>, busca <b>FIREBASE_CONFIG</b> al principio del archivo
+        y pega ahí los datos de tu proyecto de Firebase (lo explica el README.md).
       </div>
     );
   }
